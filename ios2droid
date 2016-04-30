@@ -1,0 +1,144 @@
+#!/usr/bin/perl -w
+
+my $TEST_MODE = 0;
+my $num_args = $#ARGV + 1;
+if ($num_args == 1) {
+    if ($ARGV[0] =~ /^test$/i) {
+        $TEST_MODE = 1;
+    }
+}
+
+my ($ios_dir, $android_dir) = find_dirs('.');
+
+if ($TEST_MODE) {
+    print "\n-------------------- T E S T   M O D E --------------------\n";
+} else {
+    mkdir "$android_dir/drawable"           if ! -e "$android_dir/drawable";
+    mkdir "$android_dir/drawable-hdpi"      if ! -e "$android_dir/drawable-hdpi";
+    mkdir "$android_dir/drawable-xhdpi"     if ! -e "$android_dir/drawable-xhdpi";
+    mkdir "$android_dir/drawable-xxhdpi"    if ! -e "$android_dir/drawable-xxhdpi";
+}
+
+convert_images($ios_dir, $android_dir);
+
+#-----------------------------------------------------------------------------
+
+sub find_dirs {
+    my ($local_dir) = @_;
+    my $ios_dir = '';
+    my $android_dir = '';
+    opendir my $DIR, $local_dir or die "Unable to open directory, $local_dir : $!";
+    while (defined (my $name = readdir $DIR)) {
+        my $path = "$local_dir/$name";
+        if (-d $path) {
+            if ($name =~ /^ios$/i) {
+                $ios_dir = "$path/Resources" if -e "$path/Resources";
+            } elsif ($name =~ /^(an)?droid$/i) {
+                $android_dir = "$path/Resources" if -e "$path/Resources";
+            }
+        }
+    }
+    closedir $DIR;
+    die "No iOS Resources directory found" if !$ios_dir;
+    die "No Android Resources directory found" if !$android_dir;
+    return ($ios_dir, $android_dir);
+}
+
+sub convert_images {
+    my ($ios_dir, $android_dir) = @_;
+    my @images = get_ios_plain_image_names($ios_dir);
+    return if scalar @images == 0;
+    my $len = 0;
+    foreach (@images) {
+        my $path = "$ios_dir/$_";
+        $len = length($path) if length($path) > $len;
+    }
+    foreach (sort @images) {
+        print "\n";
+        convert_image_mdpi  ($_, $ios_dir, $android_dir, $len+3);
+        convert_image_hdpi  ($_, $ios_dir, $android_dir, $len+3);
+        convert_image_xhdpi ($_, $ios_dir, $android_dir, $len+3);
+        convert_image_xxhdpi($_, $ios_dir, $android_dir, $len+3);
+    }
+    print "\n";
+}
+
+sub convert_image_mdpi {
+    my ($image, $ios, $droid, $len) = @_;
+    copy_image("$ios/$image", "$droid/drawable/$image", $len);
+}
+
+sub convert_image_hdpi {
+    my ($image, $ios, $droid, $len) = @_;
+    my $image_2x = image_x_name($image, 2);
+    my $image_3x = image_x_name($image, 3);
+    if (-e "$ios/$image_2x") {
+        resize_image("$ios/$image_2x", 75, "$droid/drawable-hdpi/$image", $len);
+    } elsif (-e "$ios/$image_3x") {
+        resize_image("$ios/$image_3x", 50, "$droid/drawable-hdpi/$image", $len);
+    }
+}
+
+sub convert_image_xhdpi {
+    my ($image, $ios, $droid, $len) = @_;
+    my $image_2x = image_x_name($image, 2);
+    my $image_3x = image_x_name($image, 3);
+    if (-e "$ios/$image_2x") {
+        copy_image("$ios/$image_2x", "$droid/drawable-xhdpi/$image", $len);
+    } elsif (-e "$ios/$image_3x") {
+        resize_image("$ios/$image_3x", 67, "$droid/drawable-xhdpi/$image", $len);
+    }
+}
+
+sub convert_image_xxhdpi {
+    my ($image, $ios, $droid, $len) = @_;
+    my $image_2x = image_x_name($image, 2);
+    my $image_3x = image_x_name($image, 3);
+    if (-e "$ios/$image_3x") {
+        copy_image("$ios/$image_3x", "$droid/drawable-xxhdpi/$image", $len);
+    } elsif (-e "$ios/$image_2x") {
+        resize_image("$ios/$image_2x", 150, "$droid/drawable-xxhdpi/$image", $len);
+    }
+}
+
+sub get_ios_plain_image_names {
+    my ($dir) = @_;
+    my @images = ();
+    opendir my $DIR, $dir or die "Unable to open directory, $dir : $!";
+    while (defined (my $name = readdir $DIR)) {
+        if ($name =~ /\.(jpg|jpeg|png)$/i && $name !~ /@[2-9]x/ && $name !~ /^icon-/i) {
+            push @images, $name;
+        }
+    }
+    closedir $DIR;
+    return @images;
+}
+
+sub image_x_name {
+    my ($image, $n) = @_;
+    die "Invalid value for n ($n)" if $n < 2 || $n > 9;
+    if ($image =~ /^(.*)\.(.*?)$/) {
+        return $1 . '@' . $n . 'x.' . $2;
+    } else {
+        die "Improperly formatted image name ($image)";
+    }
+}
+
+sub copy_image {
+    my ($src_path, $dst_path, $len) = @_;
+    printf("%-${len}s  -->  %s\n", $src_path, $dst_path);
+    cmd("cp $src_path $dst_path");
+}
+
+sub resize_image {
+    my ($src_path, $percent, $dst_path, $len) = @_;
+    printf("%-${len}s  -->  %s (resize %d%%)\n", $src_path, $dst_path, $percent);
+    cmd("convert $src_path -resize $percent% $dst_path");
+}
+
+sub cmd {
+    my ($cmd) = @_;
+    if (!$TEST_MODE) {
+        my $result = `$cmd`;
+    }
+}
